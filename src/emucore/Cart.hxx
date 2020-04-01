@@ -27,6 +27,7 @@ class Settings;
 #include <fstream>
 #include "m6502/src/bspf/src/bspf.hxx"
 #include "m6502/src/Device.hxx"
+#include "Random.hxx"
 #include "../common/Log.hpp"
 
 /**
@@ -50,7 +51,7 @@ class Cartridge : public Device
       @return   Pointer to the new cartridge object allocated on the heap
     */
     static Cartridge* create(const uInt8* image, uInt32 size, 
-        const Properties& props, const Settings& settings);
+        const Properties& props, const Settings& settings, Random& rng);
 
     /**
       Create a new cartridge
@@ -65,7 +66,7 @@ class Cartridge : public Device
     /**
       Query some information about this cartridge.
     */
-    static const std::string& about() { return myAboutString; }
+    const std::string& about() const { return myAboutString; }
 
     /**
       Save the internal (patched) ROM image.
@@ -126,6 +127,9 @@ class Cartridge : public Device
     // If bankLocked is true, ignore attempts at bankswitching. This is used
     // by the debugger, when disassembling/dumping ROM.
     bool bankLocked;
+
+    // Info about this cartridge in string format
+    std::string myAboutString;
 
   private:
     /**
@@ -193,9 +197,6 @@ class Cartridge : public Device
     static bool isProbablyFE(const uInt8* image, uInt32 size);
 
   private:
-    // Contains info about this cartridge in string format
-    static std::string myAboutString;
-
     // Copy constructor isn't supported by cartridges so make it private
     Cartridge(const Cartridge&);
 

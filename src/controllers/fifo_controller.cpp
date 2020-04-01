@@ -1,8 +1,8 @@
 /* *****************************************************************************
  * A.L.E (Arcade Learning Environment)
- * Copyright (c) 2009-2013 by Yavar Naddaf, Joel Veness, Marc G. Bellemare and 
+ * Copyright (c) 2009-2013 by Yavar Naddaf, Joel Veness, Marc G. Bellemare and
  *   the Reinforcement Learning and Artificial Intelligence Laboratory
- * Released under the GNU General Public License; see License.txt for details. 
+ * Released under the GNU General Public License; see License.txt for details.
  *
  * Based on: Stella  --  "An Atari 2600 VCS Emulator"
  * Copyright (c) 1995-2007 by Bradford W. Mott and the Stella team
@@ -16,33 +16,35 @@
 
 #include "fifo_controller.hpp"
 
-#include <stdio.h>
 #include <cassert>
+#include <cstdio>
+
 #include "../common/Log.hpp"
+
+namespace ale {
 
 #define MAX_RUN_LENGTH (0xFF)
 
-static const char hexval[] = { 
-    '0', '1', '2', '3', '4', '5', '6', '7', 
-    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' 
-};
+static const char hexval[] = {'0', '1', '2', '3', '4', '5', '6', '7',
+                              '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
 /* appends a pixels value to the string buffer, returning the number of characters written */
-inline void appendByte(char *buf, uInt8 v) {
-    *buf = hexval[(v >> 4)];
-    *(buf+1) = hexval[v & 0xF];
+inline void appendByte(char* buf, uInt8 v) {
+  *buf = hexval[(v >> 4)];
+  *(buf + 1) = hexval[v & 0xF];
 }
 
-FIFOController::FIFOController(OSystem* _osystem, bool named_pipes) :
-  ALEController(_osystem),
-  m_named_pipes(named_pipes) {
+FIFOController::FIFOController(OSystem* _osystem, bool named_pipes)
+    : ALEController(_osystem), m_named_pipes(named_pipes) {
   m_max_num_frames = m_osystem->settings().getInt("max_num_frames");
   m_run_length_encoding = m_osystem->settings().getBool("run_length_encoding");
 }
 
 FIFOController::~FIFOController() {
-  if (m_fout != NULL) fclose(m_fout);
-  if (m_fin != NULL) fclose(m_fin);
+  if (m_fout != NULL)
+    fclose(m_fout);
+  if (m_fin != NULL)
+    fclose(m_fin);
 }
 
 void FIFOController::run() {
@@ -52,7 +54,7 @@ void FIFOController::run() {
   handshake();
 
   // Main loop
-  while (!isDone()) { 
+  while (!isDone()) {
     // Send data over to agent
     sendData();
     // Read agent's response & process it
@@ -67,13 +69,14 @@ void FIFOController::run() {
 
   // Send a termination signal to the agent, if they're still around
   if (!feof(m_fout))
-    fprintf (m_fout, "DIE\n");
+    fprintf(m_fout, "DIE\n");
 }
 
 bool FIFOController::isDone() {
   // Die once we reach enough samples
-  return ((m_max_num_frames > 0 && m_environment.getFrameNumber() >= m_max_num_frames) ||
-    feof(m_fin) || feof(m_fout) || ferror(m_fout));
+  return ((m_max_num_frames > 0 &&
+           m_environment.getFrameNumber() >= m_max_num_frames) ||
+          feof(m_fin) || feof(m_fout) || ferror(m_fout));
 }
 
 void FIFOController::handshake() {
@@ -81,34 +84,34 @@ void FIFOController::handshake() {
   if (m_named_pipes) {
     openNamedPipes();
   } else { // Otherwise read from stdin and output to stdout
-      m_fout = stdout;
-      m_fin = stdin;
-      assert(m_fin != NULL && m_fout != NULL);
+    m_fout = stdout;
+    m_fin = stdin;
+    assert(m_fin != NULL && m_fout != NULL);
   }
 
   // send the width and height of the screen through the pipe
-  char out_buffer [1024];
-  
-  snprintf (out_buffer, sizeof(out_buffer), "%d-%d\n", 
-    (int)m_environment.getScreen().width(),
-    (int)m_environment.getScreen().height());
-  
+  char out_buffer[1024];
+
+  snprintf(out_buffer, sizeof(out_buffer), "%d-%d\n",
+           (int)m_environment.getScreen().width(),
+           (int)m_environment.getScreen().height());
+
   fputs(out_buffer, m_fout);
-  fflush (m_fout);
+  fflush(m_fout);
 
   // Read in agent's response
-  char in_buffer [1024];
-  if (fgets (in_buffer, sizeof(in_buffer), m_fin) == NULL) {
+  char in_buffer[1024];
+  if (fgets(in_buffer, sizeof(in_buffer), m_fin) == NULL) {
     // If The agent hung up, stop the handshake.
     return;
   }
 
   // Parse response: send_screen, send_ram, <obsolete>, send_RL
-  char * token = strtok (in_buffer,",\n");
+  char* token = strtok(in_buffer, ",\n");
   m_send_screen = atoi(token);
-  token = strtok (NULL,",\n");
+  token = strtok(NULL, ",\n");
   m_send_ram = atoi(token);
-  token = strtok (NULL,",\n");
+  token = strtok(NULL, ",\n");
   // Used to be frame skip; now obsolete
   token = strtok(NULL, ",\n");
   m_send_rl = atoi(token);
@@ -130,16 +133,19 @@ void FIFOController::openNamedPipes() {
 }
 
 void FIFOController::sendData() {
-  if (m_send_ram) sendRAM();
-  if (m_send_screen) sendScreen();
-  if (m_send_rl) sendRL();
+  if (m_send_ram)
+    sendRAM();
+  if (m_send_screen)
+    sendScreen();
+  if (m_send_rl)
+    sendRL();
   // Send the terminating newline
   fputc('\n', m_fout);
   fflush(m_fout);
 }
 
 void FIFOController::sendScreen() {
-  // Obtain the screen from the environment 
+  // Obtain the screen from the environment
   const ALEScreen& screen = m_environment.getScreen();
 
   char buffer[204800];
@@ -153,7 +159,7 @@ void FIFOController::sendScreen() {
 
   // Append terminating stuff, send
   buffer[sn] = ':';
-  buffer[sn+1] = 0;
+  buffer[sn + 1] = 0;
 
   fputs(buffer, m_fout);
 }
@@ -221,12 +227,12 @@ void FIFOController::sendRAM() {
 
   // Output RAM
   buffer[sn] = ':';
-  buffer[sn+1] = 0;
+  buffer[sn + 1] = 0;
   fputs(buffer, m_fout);
 }
 
 void FIFOController::sendRL() {
-  int r = (int) latest_reward;
+  int r = (int)latest_reward;
   bool is_terminal = m_environment.isTerminal();
 
   fprintf(m_fout, "%d,%d:", is_terminal, r);
@@ -235,7 +241,7 @@ void FIFOController::sendRL() {
 void FIFOController::readAction(Action& action_a, Action& action_b) {
   // Read the new action from the pipe, as a comma-separated pair
   char in_buffer[2048];
-  if (fgets (in_buffer, sizeof(in_buffer), m_fin) == NULL) {
+  if (fgets(in_buffer, sizeof(in_buffer), m_fin) == NULL) {
     // If fgets returns NULL, we set the two actions to NOOP here. This is probably because the
     // other side has hung up. We'll let the process terminate as usual.
     action_a = PLAYER_A_NOOP;
@@ -243,10 +249,11 @@ void FIFOController::readAction(Action& action_a, Action& action_b) {
     return;
   }
 
-  char * token = strtok (in_buffer,",\n");
+  char* token = strtok(in_buffer, ",\n");
   action_a = (Action)atoi(token);
 
-  token = strtok (NULL,",\n");
+  token = strtok(NULL, ",\n");
   action_b = (Action)atoi(token);
 }
 
+}  // namespace ale

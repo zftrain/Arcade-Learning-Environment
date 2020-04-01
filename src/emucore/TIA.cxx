@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 
 #include "Console.hxx"
 #include "Control.hxx"
@@ -30,9 +31,12 @@
 #include "Deserializer.hxx"
 #include "Settings.hxx"
 #include "Sound.hxx"
+
 using namespace std;
 
 #define HBLANK 68
+
+static std::once_flag tia_init_once;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 TIA::TIA(const Console& console, Settings& settings)
@@ -95,17 +99,16 @@ TIA::TIA(const Console& console, Settings& settings)
     }
   }
 
-  for(i = 0; i < 640; ++i)
-    ourDisabledMaskTable[i] = 0;
-
-  // Compute all of the mask tables
-  computeBallMaskTable();
-  computeCollisionTable();
-  computeMissleMaskTable();
-  computePlayerMaskTable();
-  computePlayerPositionResetWhenTable();
-  computePlayerReflectTable();
-  computePlayfieldMaskTable();
+  std::call_once(tia_init_once, []() {
+    // Compute all of the mask tables
+    computeBallMaskTable();
+    computeCollisionTable();
+    computeMissleMaskTable();
+    computePlayerMaskTable();
+    computePlayerPositionResetWhenTable();
+    computePlayerReflectTable();
+    computePlayfieldMaskTable();
+  });
 
   // Init stats counters
   myFrameCounter = 0;
@@ -1235,7 +1238,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myPFBit: 
       case myPFBit | PriorityBit:
       {
-        uInt32* mask = &myCurrentPFMask[hpos];
+        const uInt32* mask = &myCurrentPFMask[hpos];
 
         // Update a uInt8 at a time until reaching a uInt32 boundary
         for(; ((uintptr_t)myFramePointer & 0x03) && (myFramePointer < ending);
@@ -1256,7 +1259,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myPFBit | ScoreBit:
       case myPFBit | ScoreBit | PriorityBit:
       {
-        uInt32* mask = &myCurrentPFMask[hpos];
+        const uInt32* mask = &myCurrentPFMask[hpos];
 
         // Update a uInt8 at a time until reaching a uInt32 boundary
         for(; ((uintptr_t)myFramePointer & 0x03) && (myFramePointer < ending); 
@@ -1282,7 +1285,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myP0Bit | PriorityBit:
       case myP0Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1306,7 +1309,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myP1Bit | PriorityBit:
       case myP1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1330,8 +1333,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myP0Bit | myP1Bit | PriorityBit:
       case myP0Bit | myP1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1361,7 +1364,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myM0Bit | PriorityBit:
       case myM0Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1385,7 +1388,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myM1Bit | PriorityBit:
       case myM1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1409,7 +1412,7 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | PriorityBit:
       case myBLBit | ScoreBit | PriorityBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1433,8 +1436,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myM0Bit | myM1Bit | PriorityBit:
       case myM0Bit | myM1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1460,8 +1463,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM0Bit:
       case myBLBit | myM0Bit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1487,8 +1490,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM0Bit | PriorityBit:
       case myBLBit | myM0Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1514,8 +1517,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM1Bit:
       case myBLBit | myM1Bit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1542,8 +1545,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM1Bit | PriorityBit:
       case myBLBit | myM1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1570,8 +1573,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myP1Bit:
       case myBLBit | myP1Bit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1598,8 +1601,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myP1Bit | PriorityBit:
       case myBLBit | myP1Bit | PriorityBit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1625,8 +1628,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 0 are enabled and playfield priority is not set
       case myPFBit | myP0Bit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1653,8 +1656,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 0 are enabled and playfield priority is set
       case myPFBit | myP0Bit | PriorityBit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1681,8 +1684,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 1 are enabled and playfield priority is not set
       case myPFBit | myP1Bit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1709,8 +1712,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 1 are enabled and playfield priority is set
       case myPFBit | myP1Bit | PriorityBit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -1738,8 +1741,8 @@ inline void TIA::updateFrameScanline(uInt32 clocksToUpdate, uInt32 hpos)
       case myPFBit | myBLBit:
       case myPFBit | myBLBit | PriorityBit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -2916,7 +2919,7 @@ uInt8 TIA::ourBallMaskTable[4][4][320];
 uInt16 TIA::ourCollisionTable[64];
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-uInt8 TIA::ourDisabledMaskTable[640];
+const uInt8 TIA::ourDisabledMaskTable[640] = {};
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 const Int16 TIA::ourPokeDelayTable[64] = {
@@ -3087,7 +3090,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myPFBit | PriorityBit:
       /* @strip
       {
-        uInt32* mask = &myCurrentPFMask[hpos];
+        const uInt32* mask = &myCurrentPFMask[hpos];
 
         // Update a uInt8 at a time until reaching a uInt32 boundary
         for(; ((uintptr_t)myFramePointer & 0x03) && (myFramePointer < ending);
@@ -3108,7 +3111,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myPFBit | ScoreBit:
       case myPFBit | ScoreBit | PriorityBit:
       /* @strip {
-        uInt32* mask = &myCurrentPFMask[hpos];
+        const uInt32* mask = &myCurrentPFMask[hpos];
 
         // Update a uInt8 at a time until reaching a uInt32 boundary
         for(; ((uintptr_t)myFramePointer & 0x03) && (myFramePointer < ending); 
@@ -3135,7 +3138,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myP0Bit | PriorityBit:
       case myP0Bit | ScoreBit | PriorityBit:
       /* @strip {
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3159,7 +3162,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myP1Bit | PriorityBit:
       case myP1Bit | ScoreBit | PriorityBit:
       /* @strip {
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3183,8 +3186,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myP0Bit | myP1Bit | PriorityBit:
       case myP0Bit | myP1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3215,7 +3218,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myM0Bit | PriorityBit:
       case myM0Bit | ScoreBit | PriorityBit:
       /* @strip {
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3240,7 +3243,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myM1Bit | PriorityBit:
       case myM1Bit | ScoreBit | PriorityBit:
       /* @strip {
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3265,7 +3268,7 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | PriorityBit:
       case myBLBit | ScoreBit | PriorityBit:
       /* @strip {
-        uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3290,8 +3293,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myM0Bit | myM1Bit | PriorityBit:
       case myM0Bit | myM1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3317,8 +3320,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM0Bit:
       case myBLBit | myM0Bit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3344,8 +3347,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM0Bit | PriorityBit:
       case myBLBit | myM0Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM0 = &myCurrentM0Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM0 = &myCurrentM0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3371,8 +3374,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM1Bit:
       case myBLBit | myM1Bit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3399,8 +3402,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myM1Bit | PriorityBit:
       case myBLBit | myM1Bit | ScoreBit | PriorityBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mM1 = &myCurrentM1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mM1 = &myCurrentM1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3427,8 +3430,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myP1Bit:
       case myBLBit | myP1Bit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3455,8 +3458,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myBLBit | myP1Bit | PriorityBit:
       case myBLBit | myP1Bit | PriorityBit | ScoreBit:
       {
-        uInt8* mBL = &myCurrentBLMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3482,8 +3485,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 0 are enabled and playfield priority is not set
       case myPFBit | myP0Bit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3510,8 +3513,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 0 are enabled and playfield priority is set
       case myPFBit | myP0Bit | PriorityBit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP0 = &myCurrentP0Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP0 = &myCurrentP0Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3538,8 +3541,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 1 are enabled and playfield priority is not set
       case myPFBit | myP1Bit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3566,8 +3569,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       // Playfield and Player 1 are enabled and playfield priority is set
       case myPFBit | myP1Bit | PriorityBit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mP1 = &myCurrentP1Mask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mP1 = &myCurrentP1Mask[hpos];
 
         while(myFramePointer < ending)
         {
@@ -3595,8 +3598,8 @@ inline void TIA::updateFrameScanlineFast(uInt32 clocksToUpdate, uInt32 hpos)
       case myPFBit | myBLBit:
       case myPFBit | myBLBit | PriorityBit:
       {
-        uInt32* mPF = &myCurrentPFMask[hpos];
-        uInt8* mBL = &myCurrentBLMask[hpos];
+        const uInt32* mPF = &myCurrentPFMask[hpos];
+        const uInt8* mBL = &myCurrentBLMask[hpos];
 
         while(myFramePointer < ending)
         {

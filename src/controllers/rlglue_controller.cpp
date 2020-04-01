@@ -1,8 +1,8 @@
 /* *****************************************************************************
  * A.L.E (Arcade Learning Environment)
- * Copyright (c) 2009-2013 by Yavar Naddaf, Joel Veness, Marc G. Bellemare and 
+ * Copyright (c) 2009-2013 by Yavar Naddaf, Joel Veness, Marc G. Bellemare and
  *   the Reinforcement Learning and Artificial Intelligence Laboratory
- * Released under the GNU General Public License; see License.txt for details. 
+ * Released under the GNU General Public License; see License.txt for details.
  *
  * Based on: Stella  --  "An Atari 2600 VCS Emulator"
  * Copyright (c) 1995-2007 by Bradford W. Mott and the Stella team
@@ -18,6 +18,7 @@
 #include "rlglue_controller.hpp"
 
 #ifdef __USE_RLGLUE
+
 #include <stdio.h>
 #include <stdlib.h> // getenv
 #include <cassert>
@@ -27,8 +28,10 @@
 
 #include "../common/Log.hpp"
 
-RLGlueController::RLGlueController(OSystem* _osystem) :
-  ALEController(_osystem) {
+namespace ale {
+
+RLGlueController::RLGlueController(OSystem* _osystem)
+    : ALEController(_osystem) {
   m_max_num_frames = m_osystem->settings().getInt("max_num_frames");
   if (m_osystem->settings().getBool("restricted_action_set")) {
     available_actions = m_settings->getMinimalActionSet();
@@ -38,8 +41,7 @@ RLGlueController::RLGlueController(OSystem* _osystem) :
   m_send_rgb = m_osystem->settings().getBool("send_rgb");
 }
 
-RLGlueController::~RLGlueController() {
-}
+RLGlueController::~RLGlueController() {}
 
 void RLGlueController::run() {
   // First perform handshaking
@@ -54,7 +56,8 @@ void RLGlueController::run() {
 
 bool RLGlueController::isDone() {
   // Die once we reach enough samples
-  return ((m_max_num_frames > 0 && m_environment.getFrameNumber() >= m_max_num_frames));
+  return ((m_max_num_frames > 0 &&
+           m_environment.getFrameNumber() >= m_max_num_frames));
 }
 
 void RLGlueController::initRLGlue() {
@@ -98,7 +101,7 @@ void RLGlueController::rlGlueLoop() {
     rlRecvBufferData(m_connection, &m_buffer, &envState);
 
     // Switch statement fills m_buffer with some data for RL-Glue
-    switch(envState) {
+    switch (envState) {
       case kEnvInit:
         envInit();
         break;
@@ -123,7 +126,8 @@ void RLGlueController::rlGlueLoop() {
         break;
 
       default:
-        ale::Logger::Error << "Unknown RL-Glue command: " << envState << std::endl;
+        ale::Logger::Error << "Unknown RL-Glue command: " << envState
+                           << std::endl;
         error = true;
         break;
     };
@@ -140,10 +144,11 @@ void RLGlueController::envInit() {
   unsigned int offset = 0;
   unsigned int observation_dimensions;
   std::stringstream taskSpec;
-  taskSpec << "VERSION RL-Glue-3.0 "
-    "PROBLEMTYPE episodic "
-    "DISCOUNTFACTOR 1 " // Goal is to maximize score... avoid unpleasant tradeoffs with 1 
-    "OBSERVATIONS INTS (128 0 255)"; //RAM
+  taskSpec
+      << "VERSION RL-Glue-3.0 "
+         "PROBLEMTYPE episodic "
+         "DISCOUNTFACTOR 1 " // Goal is to maximize score... avoid unpleasant tradeoffs with 1
+         "OBSERVATIONS INTS (128 0 255)"; //RAM
   if (m_send_rgb) {
     taskSpec << "(100800 0 255) "; // Screen specified as an RGB triple per pixel
     observation_dimensions = 128 + 210 * 160 * 3;
@@ -151,9 +156,11 @@ void RLGlueController::envInit() {
     taskSpec << "(33600 0 127) "; // Screen specified as one pallette index per pixel
     observation_dimensions = 128 + 210 * 160;
   }
-  taskSpec << "ACTIONS INTS (0 " << available_actions.size() << ") "
-    "REWARDS (UNSPEC UNSPEC) " // While rewards are technically bounded, this is safer 
-    "EXTRA Name: Arcade Learning Environment ";
+  taskSpec
+      << "ACTIONS INTS (0 " << available_actions.size()
+      << ") "
+         "REWARDS (UNSPEC UNSPEC) " // While rewards are technically bounded, this is safer
+         "EXTRA Name: Arcade Learning Environment ";
   // Allocate...?
   allocateRLStruct(&m_rlglue_action, 1, 0, 0);
   allocateRLStruct(&m_observation, observation_dimensions, 0, 0);
@@ -162,7 +169,8 @@ void RLGlueController::envInit() {
   unsigned int taskSpecLength = taskSpec.str().size();
   offset += rlBufferWrite(&m_buffer, offset, &taskSpecLength, 1, sizeof(int));
   // Then the string itself
-  rlBufferWrite(&m_buffer, offset, taskSpec.str().c_str(), taskSpecLength, sizeof(char));
+  rlBufferWrite(&m_buffer, offset, taskSpec.str().c_str(), taskSpecLength,
+                sizeof(char));
 }
 
 /** Sends the first observation out -- beginning an episode */
@@ -180,7 +188,7 @@ void RLGlueController::envStart() {
 }
 
 /** Reads in an action, returns the next observation-reward-terminal tuple.
-    derived from onEnvStep(). */
+ *  derived from onEnvStep(). */
 void RLGlueController::envStep() {
   unsigned int offset = 0;
 
@@ -194,7 +202,7 @@ void RLGlueController::envStep() {
     player_a_action_index = 0;
   }
   Action player_a_action = available_actions[player_a_action_index];
-  Action player_b_action = (Action) PLAYER_B_NOOP;
+  Action player_b_action = (Action)PLAYER_B_NOOP;
 
   // Filter out non-regular actions ... let RL-Glue deal with those
   filterActions(player_a_action, player_b_action);
@@ -227,7 +235,7 @@ void RLGlueController::envMessage() {
   offset = rlBufferRead(&m_buffer, offset, &messageLength, 1, sizeof(int));
   // This could, of course, be stored somewhere for efficiency reasons
   if (messageLength > 0) {
-    char * message = new char[messageLength+1];
+    char* message = new char[messageLength + 1];
     rlBufferRead(&m_buffer, offset, message, messageLength, sizeof(char));
     // Null terminate the string :(
     message[messageLength] = 0;
@@ -238,19 +246,21 @@ void RLGlueController::envMessage() {
   }
 }
 
-void RLGlueController::filterActions(Action& player_a_action, Action& player_b_action) {
+void RLGlueController::filterActions(Action& player_a_action,
+                                     Action& player_b_action) {
   if (player_a_action >= PLAYER_A_MAX)
     player_a_action = PLAYER_A_NOOP;
   if (player_b_action < PLAYER_B_NOOP || player_b_action >= PLAYER_B_MAX)
     player_b_action = PLAYER_B_NOOP;
 }
 
-reward_observation_terminal_t RLGlueController::constructRewardObservationTerminal(reward_t reward) {
+reward_observation_terminal_t
+RLGlueController::constructRewardObservationTerminal(reward_t reward) {
   reward_observation_terminal_t ro;
 
   int index = 0;
-  const ALERAM & ram = m_environment.getRAM();
-  const ALEScreen & screen = m_environment.getScreen();
+  const ALERAM& ram = m_environment.getRAM();
+  const ALEScreen& screen = m_environment.getScreen();
 
   // Copy RAM and screen into our big int-vector observation
   for (size_t i = 0; i < ram.size(); i++)
@@ -260,9 +270,9 @@ reward_observation_terminal_t RLGlueController::constructRewardObservationTermin
 
   if (m_send_rgb) {
     // Make sure we've allocated enough space for this
-    assert (arraySize * 3 + ram.size() == m_observation.numInts);
+    assert(arraySize * 3 + ram.size() == m_observation.numInts);
 
-    pixel_t *screenArray = screen.getArray();
+    pixel_t* screenArray = screen.getArray();
     int red, green, blue;
     for (size_t i = 0; i < arraySize; i++) {
       m_osystem->colourPalette().getRGB(screenArray[i], red, green, blue);
@@ -271,7 +281,7 @@ reward_observation_terminal_t RLGlueController::constructRewardObservationTermin
       m_observation.intArray[index++] = blue;
     }
   } else {
-    assert (arraySize + ram.size() == m_observation.numInts);
+    assert(arraySize + ram.size() == m_observation.numInts);
     for (size_t i = 0; i < arraySize; i++)
       m_observation.intArray[index++] = screen.getArray()[i];
   }
@@ -287,16 +297,22 @@ reward_observation_terminal_t RLGlueController::constructRewardObservationTermin
   return ro;
 }
 
-#else
+}  // namespace ale
 
-RLGlueController::RLGlueController(OSystem* system):
-  ALEController(system) {
-}
+#else  // __USE_RLGLUE
+
+namespace ale {
+
+RLGlueController::RLGlueController(OSystem* system) : ALEController(system) {}
 
 void RLGlueController::run() {
-  ale::Logger::Error << "RL-Glue interface unavailable. Please recompile with RL-Glue support." << 
-    std::endl;
+  ale::Logger::Error
+      << "RL-Glue interface unavailable. Please recompile with RL-Glue support."
+      << std::endl;
 
   // We should return and terminate gracefully, since we can.
 }
-#endif // __USE_RLGLUE
+
+}  // namespace ale
+
+#endif  // __USE_RLGLUE

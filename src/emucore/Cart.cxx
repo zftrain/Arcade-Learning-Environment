@@ -51,9 +51,9 @@
 using namespace std;
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Cartridge* Cartridge::create(const uInt8* image, uInt32 size,
-    const Properties& properties, const Settings& settings)
+    const Properties& properties, const Settings& settings, Random& rng)
 {
-  Cartridge* cartridge = 0;
+  Cartridge* cartridge = nullptr;
 
   // Get the type of the cartridge we're creating
   const string& md5 = properties.get(Cartridge_MD5);
@@ -86,13 +86,12 @@ Cartridge* Cartridge::create(const uInt8* image, uInt32 size,
     type = detected;
   }
   buf << endl;
-  myAboutString = buf.str();
 
   // We should know the cart's type by now so let's create it
   if(type == "2K")
     cartridge = new Cartridge2K(image);
   else if(type == "3E")
-    cartridge = new Cartridge3E(image, size);
+    cartridge = new Cartridge3E(image, size, rng);
   else if(type == "3F")
     cartridge = new Cartridge3F(image, size);
   else if(type == "4A50")
@@ -100,43 +99,46 @@ Cartridge* Cartridge::create(const uInt8* image, uInt32 size,
   else if(type == "4K")
     cartridge = new Cartridge4K(image);
   else if(type == "AR")
-    cartridge = new CartridgeAR(image, size, true); //settings.getBool("fastscbios")
+    cartridge = new CartridgeAR(image, size, true, rng);
   else if(type == "DPC")
     cartridge = new CartridgeDPC(image, size);
   else if(type == "E0")
     cartridge = new CartridgeE0(image);
   else if(type == "E7")
-    cartridge = new CartridgeE7(image);
+    cartridge = new CartridgeE7(image, rng);
   else if(type == "F4")
     cartridge = new CartridgeF4(image);
   else if(type == "F4SC")
-    cartridge = new CartridgeF4SC(image);
+    cartridge = new CartridgeF4SC(image, rng);
   else if(type == "F6")
     cartridge = new CartridgeF6(image);
   else if(type == "F6SC")
-    cartridge = new CartridgeF6SC(image);
+    cartridge = new CartridgeF6SC(image, rng);
   else if(type == "F8")
     cartridge = new CartridgeF8(image, false);
   else if(type == "F8 swapped")
     cartridge = new CartridgeF8(image, true);
   else if(type == "F8SC")
-    cartridge = new CartridgeF8SC(image);
+    cartridge = new CartridgeF8SC(image, rng);
   else if(type == "FASC")
-    cartridge = new CartridgeFASC(image);
+    cartridge = new CartridgeFASC(image, rng);
   else if(type == "FE")
     cartridge = new CartridgeFE(image);
   else if(type == "MC")
-    cartridge = new CartridgeMC(image, size);
+    cartridge = new CartridgeMC(image, size, rng);
   else if(type == "MB")
     cartridge = new CartridgeMB(image);
   else if(type == "CV")
-    cartridge = new CartridgeCV(image, size);
+    cartridge = new CartridgeCV(image, size, rng);
   else if(type == "UA")
     cartridge = new CartridgeUA(image);
   else if(type == "0840")
     cartridge = new Cartridge0840(image);
   else
     ale::Logger::Error << "ERROR: Invalid cartridge type " << type << " ..." << endl;
+
+  if (cartridge != nullptr)
+    cartridge->myAboutString = buf.str();
 
   return cartridge;
 }
@@ -176,7 +178,7 @@ string Cartridge::autodetectType(const uInt8* image, uInt32 size)
   // Guess type based on size
   const char* type = 0;
 
-  if((size % 8448) == 0)
+  if(size != 0 && size % 8448 == 0)
   {
     type = "AR";
   }
@@ -277,7 +279,7 @@ string Cartridge::autodetectType(const uInt8* image, uInt32 size)
     else if(isProbably3F(image, size))
       type = "3F";
     else
-      type = "4K";  // Most common bankswitching type
+      return "Unrecognized cartridge; ROM size was " + std::to_string(size);
   }
 
   return type;
@@ -288,6 +290,8 @@ bool Cartridge::searchForBytes(const uInt8* image, uInt32 imagesize,
                                const uInt8* signature, uInt32 sigsize,
                                uInt32 minhits)
 {
+  if (sigsize > imagesize) return false;
+
   uInt32 count = 0;
   for(uInt32 i = 0; i < imagesize - sigsize; ++i)
   {
@@ -467,6 +471,3 @@ Cartridge& Cartridge::operator = (const Cartridge&)
   assert(false);
   return *this;
 }
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-string Cartridge::myAboutString;
