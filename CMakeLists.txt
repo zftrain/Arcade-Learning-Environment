@@ -1,231 +1,117 @@
-cmake_minimum_required (VERSION 2.6)
-project(ale)
-set(ALEVERSION "0.5")
+cmake_minimum_required (VERSION 3.14)
 
+# Build the C++ shared library
+option(BUILD_CPP_LIB "Build C++ Interface" ON)
 
-option(USE_SDL "Use SDL" OFF)
-option(USE_RLGLUE "Use RL-Glue" OFF)
-option(BUILD_EXAMPLES "Build Example Agents" ON)
+# Build the native Python bindings using pybind11
+option(BUILD_PYTHON_LIB "Build Python Interface" ON)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wunused -fPIC -O3 -fomit-frame-pointer -D__STDC_CONSTANT_MACROS")
-add_definitions(-DHAVE_INTTYPES)
-set(LINK_LIBS z)
-
-if(USE_RLGLUE)
-  add_definitions(-D__USE_RLGLUE)
-  list(APPEND LINK_LIBS rlutils rlgluenetdev)
+# Enable SDL for screen and audio support
+option(SDL_SUPPORT "Enable SDL support" OFF)
+# Append VCPKG manifest feature
+if(SDL_SUPPORT)
+  list(APPEND VCPKG_MANIFEST_FEATURES "sdl")
 endif()
 
-if(USE_SDL)
-  add_definitions(-D__USE_SDL)
-  add_definitions(-DSOUND_SUPPORT)
-  find_package(SDL)
-  if(SDL_FOUND AND ${SDL_VERSION_STRING} VERSION_LESS 2)
-    include_directories(${SDL_INCLUDE_DIR})
-    list(APPEND LINK_LIBS ${SDL_LIBRARY} ${SDL_MAIN_LIBRARY})
+option(BUILD_VECTOR_LIB "Build Vector Interface" OFF)
+if (BUILD_VECTOR_LIB)
+  list(APPEND VCPKG_MANIFEST_FEATURES "vector")
+endif()
+
+option(BUILD_VECTOR_XLA_LIB "Build with Vector XLA Support" OFF)
+
+option(BUILD_WASM_LIB "Build WebAssembly Interface" OFF)
+if (BUILD_WASM_LIB)
+  add_definitions(-DBUILD_WASM_LIB)
+  # WASM builds disable incompatible features
+  set(BUILD_PYTHON_LIB OFF CACHE BOOL "Python not supported in WASM build" FORCE)
+  set(BUILD_VECTOR_LIB OFF CACHE BOOL "Vector lib requires threading not well-supported in WASM" FORCE)
+  set(BUILD_CPP_LIB OFF CACHE BOOL "Building WASM interface instead" FORCE)
+  set(BUILD_VECTOR_XLA_LIB OFF CACHE BOOL "XLA not supported in WASM build" FORCE)
+  # SDL is required for WASM (Emscripten provides SDL2 compatibility layer)
+  set(SDL_SUPPORT ON CACHE BOOL "SDL required for WASM" FORCE)
+  list(APPEND VCPKG_MANIFEST_FEATURES "sdl")
+endif()
+
+# Sanitizer support for debugging (thread, address, undefined)
+# Usage: -DENABLE_SANITIZER=thread or -DENABLE_SANITIZER=address
+set(ENABLE_SANITIZER "" CACHE STRING "Enable sanitizer (thread, address, or empty to disable)")
+set_property(CACHE ENABLE_SANITIZER PROPERTY STRINGS "" "thread" "address")
+
+if(ENABLE_SANITIZER)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    message(WARNING "Sanitizers are best supported with Clang or GCC. Current compiler: ${CMAKE_CXX_COMPILER_ID}")
+  endif()
+
+  if(ENABLE_SANITIZER STREQUAL "thread")
+    message(STATUS "Building with Thread Sanitizer (TSan)")
+    add_compile_options(-fsanitize=thread -g -O1)
+    add_link_options(-fsanitize=thread)
+  elseif(ENABLE_SANITIZER STREQUAL "address")
+    message(STATUS "Building with Address Sanitizer (ASan) + Undefined Behavior Sanitizer (UBSan)")
+    # Drop vptr/function UBSan checks: they require libclang_rt.ubsan_standalone_cxx,
+    # which is static-only. When the instrumented .so is loaded by an uninstrumented
+    # Python, __ubsan_vptr_type_cache and friends end up undefined at import time.
+    add_compile_options(-fsanitize=address -fsanitize=undefined -fno-sanitize=vptr,function -fno-omit-frame-pointer -g -O1)
+    add_link_options(-fsanitize=address -fsanitize=undefined -fno-sanitize=vptr,function)
   else()
-    MESSAGE("SDL 1.2 not found: You may need to manually edit CMakeLists.txt or run \"cmake -i\" to specify your SDL path.")
-    # Uncomment below to specify the path to your SDL library. Run "locate libSDL" if unsure.
-    # link_directories(path_to_your_SDL)
-    if(APPLE)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -framework Cocoa")
-      list(APPEND LINK_LIBS sdl sdlmain)
-    else()
-      list(APPEND LINK_LIBS SDL)
-    endif()
+    message(FATAL_ERROR "Invalid sanitizer '${ENABLE_SANITIZER}'. Choose 'thread' or 'address'.")
   endif()
 endif()
 
-set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(MODULES common controllers emucore emucore/m6502/src emucore/m6502/src/bspf/src environment games games/supported external external/TinyMT)
+# Set cmake module path
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_MODULE_PATH})
 
-foreach(module ${MODULES})
-  file(GLOB module_sources ${SOURCE_DIR}/${module}/*.c)
-  list(APPEND SOURCES ${module_sources})
-  file(GLOB module_sources ${SOURCE_DIR}/${module}/*.c?[xp])
-  list(APPEND SOURCES ${module_sources})
-endforeach(module ${MODULES})
-
-# OS-dependent specifics
-if(APPLE)
-  include_directories(/System/Library/Frameworks/vecLib.framework/Versions/Current/Headers)
-  set(CMAKE_SHARED_LIBRARY_SUFFIX ".so")
+# Overlay VCPKG custom triplets
+if(NOT DEFINED VCPKG_OVERLAY_TRIPLETS)
+  set(VCPKG_OVERLAY_TRIPLETS
+      "${CMAKE_MODULE_PATH}/custom-triplets"
+      CACHE STRING "")
 endif()
 
-if(WINDOWS OR MINGW)
-  list(APPEND SOURCES ${SOURCE_DIR}/os_dependent/SettingsWin32.cxx ${SOURCE_DIR}/os_dependent/OSystemWin32.cxx ${SOURCE_DIR}/os_dependent/FSNodeWin32.cxx)
-else()
-  list(APPEND SOURCES ${SOURCE_DIR}/os_dependent/SettingsUNIX.cxx ${SOURCE_DIR}/os_dependent/OSystemUNIX.cxx ${SOURCE_DIR}/os_dependent/FSNodePOSIX.cxx)
-  SET(BIN_INSTALL_DIR "bin")
-  SET(LIB_SUFFIX "" CACHE STRING "Define suffix of directory name (32/64)" )
-  SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}" CACHE STRING "Library directory name")  
-  SET(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/include" CACHE STRING "Headers directory name")
-  SET(PKGCONFIG_INSTALL_DIR "${LIB_INSTALL_DIR}/pkgconfig/" CACHE STRING "Base directory for pkgconfig files")
-
+# Discover VCPKG default triplet
+if(DEFINED ENV{VCPKG_DEFAULT_TRIPLET} AND NOT DEFINED VCPKG_TARGET_TRIPLET)
+  set(VCPKG_TARGET_TRIPLET
+      "$ENV{VCPKG_DEFAULT_TRIPLET}"
+      CACHE STRING "")
 endif()
 
-# List and set the install targets for the headers, generate and install the pkgconfig file
-if(UNIX)
-  
-  INSTALL(FILES ${SOURCE_DIR}/os_dependent/SettingsUNIX.hxx ${SOURCE_DIR}/os_dependent/SettingsWin32.hxx ${SOURCE_DIR}/os_dependent/OSystemUNIX.hxx ${SOURCE_DIR}/os_dependent/OSystemWin32.hxx DESTINATION ${INCLUDE_INSTALL_DIR}/${PROJECT_NAME}/os_dependent)
-  file(GLOB module_headers ${SOURCE_DIR}/*.h?[xp])
-  foreach(header ${module_headers})
-         INSTALL(FILES ${header} DESTINATION ${INCLUDE_INSTALL_DIR}/${PROJECT_NAME})
-  endforeach(header ${HEADERS})
-
-  foreach(module ${MODULES})
-    file(GLOB module_headers ${SOURCE_DIR}/${module}/*.h)
-    foreach(header ${module_headers})
-         INSTALL(FILES ${header} DESTINATION ${INCLUDE_INSTALL_DIR}/${PROJECT_NAME}/${module}/)
-    endforeach(header ${HEADERS})
-
-    file(GLOB module_headers ${SOURCE_DIR}/${module}/*.h?[xp])
-    foreach(header ${module_headers})
-         INSTALL(FILES ${header} DESTINATION ${INCLUDE_INSTALL_DIR}/${PROJECT_NAME}/${module}/)
-    endforeach(header ${HEADERS})
-  endforeach(module ${MODULES})
-
-  ###################################
-  # Pkg-config stuff
-  ###################################
-
-  FILE(WRITE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.pc
-"
-Name: ${PROJECT_NAME}
-Description: The Arcade Learning Environment (ALE) - a platform for AI research.
-URL: http://www.arcadelearningenvironment.org/
-Version: ${ALEVERSION}
-Requires: 
-Libs: -L${LIB_INSTALL_DIR} -lale
-Cflags: -I${INCLUDE_INSTALL_DIR}
-"
-)
-
-
-INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.pc
-    	DESTINATION ${PKGCONFIG_INSTALL_DIR})
-
-endif(UNIX)
-
-include_directories(
-  ${SOURCE_DIR}
-  ${SOURCE_DIR}/common
-  ${SOURCE_DIR}/controllers
-  ${SOURCE_DIR}/emucore
-  ${SOURCE_DIR}/emucore/m6502/src
-  ${SOURCE_DIR}/emucore/m6502/src/bspf/src
-  ${SOURCE_DIR}/environment
-  ${SOURCE_DIR}/games
-  ${SOURCE_DIR}/games/supported
-  ${SOURCE_DIR}/os_dependent
-  ${SOURCE_DIR}/external
-  ${SOURCE_DIR}/external/TinyMT
-)
-
-add_library(ale-lib SHARED ${SOURCE_DIR}/ale_interface.cpp ${SOURCES})
-set_target_properties(ale-lib PROPERTIES OUTPUT_NAME ale)
-set_target_properties(ale-lib PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-if(UNIX)
-	install(TARGETS ale-lib 
-		DESTINATION ${LIB_INSTALL_DIR})
-endif()
-
-add_executable(ale-bin ${SOURCE_DIR}/main.cpp ${SOURCE_DIR}/ale_interface.cpp ${SOURCES})
-set_target_properties(ale-bin PROPERTIES OUTPUT_NAME ale)
-set_target_properties(ale-bin PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-if(UNIX)
-	install(TARGETS ale-bin
-		DESTINATION ${BIN_INSTALL_DIR})
-endif()
-
-add_library(ale-c-lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/ale_python_interface/ale_c_wrapper.cpp ${SOURCE_DIR}/ale_interface.cpp ${SOURCES})
-set_target_properties(ale-c-lib PROPERTIES OUTPUT_NAME ale_c)
-set_target_properties(ale-c-lib PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ale_python_interface)
-if(UNIX)
-	install(TARGETS ale-c-lib
-		DESTINATION ${LIB_INSTALL_DIR})
-endif()
-
-target_link_libraries(ale-lib ${LINK_LIBS})
-target_link_libraries(ale-bin ${LINK_LIBS})
-target_link_libraries(ale-c-lib ${LINK_LIBS})
-
-if(BUILD_EXAMPLES)
-  # Shared library example.
-  link_directories(${CMAKE_CURRENT_SOURCE_DIR})
-  add_executable(sharedLibraryInterfaceExample ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples/sharedLibraryInterfaceExample.cpp)
-  set_target_properties(sharedLibraryInterfaceExample PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples)
-  set_target_properties(sharedLibraryInterfaceExample PROPERTIES OUTPUT_NAME ${PROJECT_NAME}-sharedLibraryInterfaceExample)
-  target_link_libraries(sharedLibraryInterfaceExample ale)
-  target_link_libraries(sharedLibraryInterfaceExample ${LINK_LIBS})
-  add_dependencies(sharedLibraryInterfaceExample ale-lib)
-
-  # Fifo interface example. 
-  link_directories(${CMAKE_CURRENT_SOURCE_DIR})
-  add_executable(fifoInterfaceExample ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples/fifoInterfaceExample.cpp)
-  set_target_properties(fifoInterfaceExample PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples)
-  set_target_properties(fifoInterfaceExample PROPERTIES OUTPUT_NAME ${PROJECT_NAME}-fifoInterfaceExample)
-  target_link_libraries(fifoInterfaceExample ale)
-  target_link_libraries(fifoInterfaceExample ${LINK_LIBS})
-  add_dependencies(fifoInterfaceExample ale-lib)
-
-  # Example showing how to record an Atari 2600 video.
-  if (USE_SDL)
-    add_executable(videoRecordingExample ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples/videoRecordingExample.cpp)
-    set_target_properties(videoRecordingExample PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples)
-    set_target_properties(videoRecordingExample PROPERTIES OUTPUT_NAME ${PROJECT_NAME}-videoRecordingExample)
-    target_link_libraries(videoRecordingExample ale)
-    target_link_libraries(videoRecordingExample ${LINK_LIBS})
-    add_dependencies(videoRecordingExample ale-lib)
+# Discover VCPKG toolchain
+if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  # VCPKG_ROOT is what Microsoft recommends,
+  # VCPKG_INSTALLATION_ROOT is what's defined on Azure
+  if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE
+        "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "")
+  elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE
+        "$ENV{VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "")
   endif()
 endif()
 
-if(USE_RLGLUE)
-  add_executable(RLGlueAgent ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples/RLGlueAgent.c)
-  set_target_properties(RLGlueAgent PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples)
-  set_target_properties(RLGlueAgent PROPERTIES OUTPUT_NAME ${PROJECT_NAME}-RLGlueAgent)
-  target_link_libraries(RLGlueAgent rlutils)
-  target_link_libraries(RLGlueAgent rlagent)
-  target_link_libraries(RLGlueAgent rlgluenetdev)
-
-  add_executable(RLGlueExperiment ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples/RLGlueExperiment.c)
-  set_target_properties(RLGlueExperiment PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/examples)
-  set_target_properties(RLGlueExperiment PROPERTIES OUTPUT_NAME ${PROJECT_NAME}-RLGlueExperiment)
-  target_link_libraries(RLGlueExperiment rlutils)
-  target_link_libraries(RLGlueExperiment rlexperiment)
-  target_link_libraries(RLGlueExperiment rlgluenetdev)
-
+# Don't allow running cmake in root directory
+if (CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
+  message(FATAL_ERROR [=[
+    Source and build directories cannot be the same.
+    You should probably also remove CMakeFiles/ and CMakeCache.txt.
+  ]=])
 endif()
 
+include(ParseVersion)
+parse_version("version.txt" PREFIX ALE)
 
-########### Add uninstall target ###############
-  FILE(WRITE ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake
-"
-IF(NOT EXISTS \"@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt\")
-  MESSAGE(FATAL_ERROR \"Cannot find install manifest: @CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt\")
-ENDIF(NOT EXISTS \"@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt\")
+project(ale VERSION ${ALE_DEFAULT_VERSION}
+            DESCRIPTION "The Arcade Learning Environment (ALE) - a platform for AI research."
+            HOMEPAGE_URL "http://www.arcadelearningenvironment.org"
+            LANGUAGES CXX)
 
-FILE(READ \"@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt\" files)
-STRING(REGEX REPLACE \"\\n\" \";\" files \"\${files}\")
-FOREACH(file \${files})
-  MESSAGE(STATUS \"Uninstalling \"\$ENV{DESTDIR}\${file}\"\")
-  IF(EXISTS \"\$ENV{DESTDIR}\${file}\")
-    EXEC_PROGRAM(
-      \"@CMAKE_COMMAND@\" ARGS \"-E remove \"\$ENV{DESTDIR}\${file}\"\"
-      OUTPUT_VARIABLE rm_out
-      RETURN_VALUE rm_retval
-      )
-    IF(NOT \"\${rm_retval}\" STREQUAL 0)
-      MESSAGE(FATAL_ERROR \"Problem when removing \"\$ENV{DESTDIR}\${file}\"\")
-    ENDIF(NOT \"\${rm_retval}\" STREQUAL 0)
-  ELSE(EXISTS \"\$ENV{DESTDIR}\${file}\")
-    MESSAGE(STATUS \"File \"\$ENV{DESTDIR}\${file}\" does not exist.\")
-  ENDIF(EXISTS \"\$ENV{DESTDIR}\${file}\")
-ENDFOREACH(file)
-")
+# Main ALE src directory
+add_subdirectory(src/ale)
 
-ADD_CUSTOM_TARGET(uninstall
-  "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
-  COMMAND rm -rf ${INCLUDE_INSTALL_DIR}/ale) 
-
-
+# Only include tests in the main project
+# if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+#  enable_testing()
+#  add_subdirectory(tests)
+# endif()

@@ -1,106 +1,192 @@
-[![Build Status](https://travis-ci.org/mgbellemare/Arcade-Learning-Environment.svg?branch=master)](https://travis-ci.org/mgbellemare/Arcade-Learning-Environment)
+[![Python](https://img.shields.io/pypi/pyversions/ale-py.svg)](https://badge.fury.io/py/ale-py)
+[![PyPI Version](https://img.shields.io/pypi/v/ale-py)](https://pypi.org/project/ale-py)
 
-<img align="right" src="doc/manual/figures/ale.gif" width=50>
+<p align="center">
+    <a href="https://ale.farama.org/" target = "_blank">
+    <img src="https://github.com/Farama-Foundation/Arcade-Learning-Environment/blob/master/ale-text.png" width="500px" />
+</a>
 
-# Arcade-Learning-Environment: An Evaluation Platform for General Agents
+**The Arcade Learning Environment (ALE) is a simple framework that allows researchers and hobbyists to develop AI agents for Atari 2600 games.**
+It is built on top of the Atari 2600 emulator [Stella](https://stella-emu.github.io) and separates the details of emulation from agent design.
+This [video](https://www.youtube.com/watch?v=nzUiEkasXZI) depicts over 50 games currently supported in the ALE.
 
-The Arcade Learning Environment (ALE) -- a platform for AI research.
+For an overview of our goals for the ALE read [The Arcade Learning Environment: An Evaluation Platform for General Agents](https://jair.org/index.php/jair/article/view/10819).
+If you use ALE in your research, we ask that you please cite this paper in reference to the environment. See the [Citing](#Citing) section for BibTeX entries.
 
+Features
+--------
 
-This is the 0.5 release of the Arcade Learning Environment (ALE), a platform 
-designed for AI research. ALE is based on Stella, an Atari 2600 VCS emulator. 
-More information and ALE-related publications can be found at
+- Object-oriented framework with support to add agents and games.
+- Emulation core uncoupled from rendering and sound generation modules for fast emulation with minimal library dependencies.
+- Automatic extraction of game score and end-of-game signal for more than 100  Atari 2600 games.
+- Multi-platform code (compiled and tested under macOS, Windows, and several Linux distributions).
+- Python bindings through [nanobind](https://github.com/wjakob/nanobind).
+- Native support for [Gymnasium](http://github.com/farama-Foundation/gymnasium), the maintained fork of OpenAI Gym.
+- Atari roms are packaged within the pip package.
+- C++ based vectorizer for acting in multiple ROMs at the same time.
+- WebAssembly support for running ALE in the Browser
 
-http://www.arcadelearningenvironment.org
+Quick Start
+===========
 
-We encourage you to use the Arcade Learning Environment in your research. In
-return, we would appreciate if you cited ALE in publications that rely on
-it (BibTeX entry at the end of this document).
+The ALE currently supports three different interfaces: C++, Python, Gymnasium and WASM.
 
-Feedback and suggestions are welcome and may be addressed to any active member 
-of the ALE team.
+Python
+------
 
-Enjoy,
-The ALE team
+You simply need to install the `ale-py` package distributed via PyPI:
 
-===============================
-Quick start
-===============================
-
-Install main dependences:
+```shell
+pip install ale-py
 ```
-sudo apt-get install libsdl1.2-dev libsdl-gfx1.2-dev libsdl-image1.2-dev cmake
-```
+Note: Make sure you're using an up-to-date version of `pip` or the installation may fail.
 
-Compilation:
+Note: Free-threaded CPython (the `t` ABI, e.g. `python3.14t`) aren't supported as OpenCV doesn't build compatible wheels on any system which is necessary for preprocessing. We will look to add support when OpenCV does.
 
-```
-$ mkdir build && cd build
-$ cmake -DUSE_SDL=ON -DUSE_RLGLUE=OFF -DBUILD_EXAMPLES=ON ..
-$ make -j 4
-```
+You can now import the ALE in your Python projects with providing a direct interface to Stella for interacting with games
+```python
+from ale_py import ALEInterface, roms
 
-To install python module:
+ale = ALEInterface()
+ale.loadROM(roms.get_rom_path("breakout"))
+ale.reset_game()
 
-```
-$ pip install .
-or
-$ pip install --user .
-```
-
-Getting the ALE to work on Visual Studio requires a bit of extra wrangling. You may wish to use IslandMan93's [Visual Studio port of the ALE.](https://github.com/Islandman93/Arcade-Learning-Environment)
-
-For more details and installation instructions, see the [website](http://www.arcadelearningenvironment.org) and [manual](doc/manual/manual.pdf). To ask questions and discuss, please join the [ALE-users group](https://groups.google.com/forum/#!forum/arcade-learning-environment).
-
-
-===============================
-List of command-line parameters
-===============================
-
-Execute ./ale -help for more details; alternatively, see documentation 
-available at http://www.arcadelearningenvironment.org.
-
-```
--random_seed [n] -- sets the random seed; defaults to the current time
-
--game_controller [fifo|fifo_named] -- specifies how agents interact
-  with ALE; see Java agent documentation for details
-
--config [file] -- specifies a configuration file, from which additional 
-  parameters are read
-
--run_length_encoding [false|true] -- determine whether run-length encoding is
-  used to send data over pipes; irrelevant when an internal agent is 
-  being used
-
--max_num_frames_per_episode [n] -- sets the maximum number of frames per
-  episode. Once this number is reached, a new episode will start. Currently
-  implemented for all agents when using pipes (fifo/fifo_named) 
-
--max_num_frames [n] -- sets the maximum number of frames (independent of how 
-  many episodes are played)
+reward = ale.act(0)  # noop
+screen_obs = ale.getScreenRGB()
 ```
 
-=====================================
-Citing The Arcade Learning Environment
-=====================================
+## Gymnasium
 
-If you use ALE in your research, we ask that you please cite the following.
+For simplicity for installing ale-py with Gymnasium, `pip install "gymnasium[atari]"` shall install all necessary modules and ROMs. See Gymnasium [introductory page](https://gymnasium.farama.org/main/introduction/basic_usage/) for description of the API to interface with the environment.
 
-M. G. Bellemare, Y. Naddaf, J. Veness and M. Bowling. The Arcade Learning Environment: An Evaluation Platform for General Agents, Journal of Artificial Intelligence Research, Volume 47, pages 253-279, 2013.
+```py
+import gymnasium as gym
+import ale_py
 
-In BibTeX format:
+gym.register_envs(ale_py)  # unnecessary but helpful for IDEs
 
+env = gym.make('ALE/Breakout-v5', render_mode="human")  # remove render_mode in training
+obs, info = env.reset()
+episode_over = False
+while not episode_over:
+    action = policy(obs)  # to implement - use `env.action_space.sample()` for a random policy
+    obs, reward, terminated, truncated, info = env.step(action)
+
+    episode_over = terminated or truncated
+env.close()
 ```
-@ARTICLE{bellemare13arcade,
-  author = {{Bellemare}, M.~G. and {Naddaf}, Y. and {Veness}, J. and {Bowling}, M.},
-  title = {The Arcade Learning Environment: An Evaluation Platform for General Agents},
-  journal = {Journal of Artificial Intelligence Research},
-  year = "2013",
-  month = "jun",
-  volume = "47",
-  pages = "253--279",
+
+To run with continuous actions, you can simply modify the call to `gym.make` above with:
+```python
+env = gym.make('ALE/Breakout-v5', continuous=True, render_mode="human")
+```
+
+For all the environments available and their description, see [gymnasium atari page](https://gymnasium.farama.org/environments/atari/).
+
+A vectorized environment with preprocessing, written in C++, is also available with `gym.make_vec("ALE/Breakout-v5", num_envs=10)`.
+See [vector-environment](https://ale.farama.org/vector-environment/) for more information.
+
+C++
+---
+
+The following instructions will assume you have a valid C++17 compiler and [`vcpkg`](https://github.com/microsoft/vcpkg) installed.
+
+We use CMake as a first class citizen, and you can use the ALE directly with any CMake project.
+To compile and install the ALE you can run
+
+```sh
+mkdir build && cd build
+cmake ../ -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target install
+```
+
+There are optional flags `-DSDL_SUPPORT=ON/OFF` to toggle SDL support (i.e., `display_screen` and `sound` support; `OFF` by default), `-DBUILD_CPP_LIB=ON/OFF` to build
+the `ale-lib` C++ target (`ON` by default), and `-DBUILD_PYTHON_LIB=ON/OFF` to build the pybind11 wrapper (`ON` by default).
+
+Finally, you can link against the ALE in your own CMake project as follows
+
+```cmake
+find_package(ale REQUIRED)
+target_link_libraries(YourTarget ale::ale-lib)
+```
+
+WebAssembly
+---
+
+The ALE can be compiled to WebAssembly for use directly in web browsers, enabling interactive demos, educational tools, and browser-based RL experiments without any installation.
+
+This be used through NPM (`> npm install @farama/ale-wasm`) or through a standalone compiled zip (see the release artifacts).
+
+**Example NPM usage:**
+```javascript
+import createALEModule from './ale.js';
+
+const ALE = await createALEModule();
+const ale = new ALE.ALEInterface();
+
+await ale.loadROM('roms/breakout.bin');
+ale.resetGame();
+
+while (!ale.gameOver()) {
+    const actions = ale.getMinimalActionSet();
+    const action = actions[Math.floor(Math.random() * actions.length)];
+    const reward = ale.act(action);
 }
 ```
 
+For more examples for NPM and standalone installs, see [docs/wasm/](docs/wasm/).
 
+Citing
+======
+
+If you use the ALE in your research, we ask that you please cite the following.
+
+*M. G. Bellemare, Y. Naddaf, J. Veness and M. Bowling. The Arcade Learning Environment: An Evaluation Platform for General Agents, Journal of Artificial Intelligence Research, Volume 47, pages 253-279, 2013.*
+
+In BibTeX format:
+
+```bibtex
+@Article{bellemare13arcade,
+    author = {{Bellemare}, M.~G. and {Naddaf}, Y. and {Veness}, J. and {Bowling}, M.},
+    title = {The Arcade Learning Environment: An Evaluation Platform for General Agents},
+    journal = {Journal of Artificial Intelligence Research},
+    year = "2013",
+    month = "jun",
+    volume = "47",
+    pages = "253--279",
+}
+```
+
+If you use the ALE with sticky actions (flag ``repeat_action_probability``), or if
+you use the different game flavours (mode and difficulty switches), we ask you
+that you also cite the following:
+
+*M. C. Machado, M. G. Bellemare, E. Talvitie, J. Veness, M. J. Hausknecht, M. Bowling. Revisiting the Arcade Learning Environment: Evaluation Protocols and Open Problems for General Agents,  Journal of Artificial Intelligence Research, Volume 61, pages 523-562, 2018.*
+
+In BibTex format:
+
+```bibtex
+@Article{machado18arcade,
+    author = {Marlos C. Machado and Marc G. Bellemare and Erik Talvitie and Joel Veness and Matthew J. Hausknecht and Michael Bowling},
+    title = {Revisiting the Arcade Learning Environment: Evaluation Protocols and Open Problems for General Agents},
+    journal = {Journal of Artificial Intelligence Research},
+    volume = {61},
+    pages = {523--562},
+    year = {2018}
+}
+```
+
+If you use the CALE (Continuous ALE), we ask you that you also cite the following:
+
+*Jesse Farebrother and Pablo Samuel Castro.  Cale:  Continuous arcade learning environment.Ad-vances in Neural Information Processing Systems, 2024.*
+
+In BibTex format:
+
+```bibtex
+@article{farebrother2024cale,
+  title={C{ALE}: Continuous Arcade Learning Environment},
+  author={Jesse Farebrother and Pablo Samuel Castro},
+  journal={Advances in Neural Information Processing Systems},
+  year={2024}
+}
+```
